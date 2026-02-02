@@ -257,4 +257,4 @@ doc_events = {
     }
 }
 
-after_install = "sync_master.sync_master.api.setup_cron"
+#after_install = "sync_master.sync_master.api.setup_cron"
