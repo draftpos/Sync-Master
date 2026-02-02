@@ -10,6 +10,7 @@
   "remote_company",
   "column_break_qfin",
   "api_key",
+  "site_name",
   "api_secret_column",
   "api_secret",
   "section_break_fcmv",
@@ -25,7 +26,9 @@
   {
    "fieldname": "cloud_site_url",
    "fieldtype": "Data",
-   "label": "Cloud Site URL"
+   "in_list_view": 1,
+   "label": "Cloud Site URL",
+   "reqd": 1
   },
   {
    "fieldname": "column_break_qfin",
@@ -52,12 +55,15 @@
   {
    "fieldname": "api_key",
    "fieldtype": "Data",
-   "label": "API Key"
+   "in_list_view": 1,
+   "label": "API Key",
+   "reqd": 1
   },
   {
    "fieldname": "api_secret",
    "fieldtype": "Data",
-   "label": "API Secret"
+   "label": "API Secret",
+   "reqd": 1
   },
   {
    "fieldname": "last_item_sync",
@@ -94,16 +100,25 @@
   {
    "fieldname": "remote_company",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Company",
-   "options": "Company"
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site Name",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-02 11:48:12.567884",
- "modified_by": "Administrator",
+ "modified": "2026-02-02 20:32:56.948710",
+ "modified_by": "admin@gmail.com",
  "module": "Sync Master",
  "name": "Sync Settings",
  "owner": "Administrator",

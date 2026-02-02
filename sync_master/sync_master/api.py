@@ -562,17 +562,27 @@ def setup_cron():
             "message": str(e)
         }
 
+import subprocess
+import frappe
 
 @frappe.whitelist()
 def setup_cron_for_sales_invoice():
     """
-    Sets up cron job to push pending Sales Invoices periodically.
+    Sets up cron job to push pending Sales Invoices periodically for the site in Sync Settings.
     """
-    frappe.publish_realtime("msg", "Setting up Sales Invoice push cron...", user="Administrator")
+    settings = frappe.get_single("Sync Settings")
+    site = getattr(settings, "site_name", None)  # make sure you add 'site_name' field to the doctype
+    if not site:
+        frappe.throw("Site name not set in Sync Settings!")
 
-    bench_path = "/home/frappe/frappe-bench"
-    log_file = f"{bench_path}/logs/push_invoices.log"
-    cron_line = f"* * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.push_pending_invoices >> {log_file} 2>&1"
+    frappe.publish_realtime("msg", f"Setting up Sales Invoice push cron for {site}...", user="Administrator")
+
+    bench_path = "/home/munyaradzi/Documents/frappe-bench"
+    log_file = f"{bench_path}/logs/push_invoices_{site}.log"
+    cron_line = (
+        f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
+        f"execute sync_master.sync_master.api.push_pending_invoices >> {log_file} 2>&1"
+    )
 
     try:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
@@ -581,24 +591,33 @@ def setup_cron_for_sales_invoice():
         if cron_line not in existing_cron:
             new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
             subprocess.run(["crontab", "-"], input=new_cron, text=True)
-            frappe.publish_realtime("msg", "Sales Invoice push cron set successfully!", user="Administrator")
+            frappe.publish_realtime("msg", f"Sales Invoice push cron set successfully for {site}!", user="Administrator")
         else:
-            frappe.publish_realtime("msg", "Sales Invoice push cron already exists, skipping...", user="Administrator")
+            frappe.publish_realtime("msg", f"Sales Invoice push cron already exists for {site}, skipping...", user="Administrator")
 
     except Exception as e:
-        frappe.log_error(message=str(e), title="Setup Sales Invoice Cron Error")
-        frappe.publish_realtime("msg", f"Failed to setup Sales Invoice cron: {str(e)}", user="Administrator")
+        frappe.log_error(message=str(e), title=f"Setup Sales Invoice Cron Error ({site})")
+        frappe.publish_realtime("msg", f"Failed to setup Sales Invoice cron for {site}: {str(e)}", user="Administrator")
+
 
 @frappe.whitelist()
 def setup_cron_for_cloud_pulling():
     """
-    Sets up cron job to sync items, customers, price lists, and item prices from cloud periodically.
+    Sets up cron job to sync items, customers, price lists, and item prices from cloud periodically for the site in Sync Settings.
     """
-    frappe.publish_realtime("msg", "Setting up cloud pulling cron...", user="Administrator")
+    settings = frappe.get_single("Sync Settings")
+    site = getattr(settings, "site_name", None)  # make sure you add 'site_name' field to the doctype
+    if not site:
+        frappe.throw("Site name not set in Sync Settings!")
 
-    bench_path = "/home/frappe/frappe-bench"
-    log_file = f"{bench_path}/logs/cloud_pull.log"
-    cron_line = f"* * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.sync_from_remote >> {log_file} 2>&1"
+    frappe.publish_realtime("msg", f"Setting up cloud pulling cron for {site}...", user="Administrator")
+
+    bench_path = "/home/munyaradzi/Documents/frappe-bench"
+    log_file = f"{bench_path}/logs/cloud_pull_{site}.log"
+    cron_line = (
+        f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
+        f"execute sync_master.sync_master.api.sync_from_remote >> {log_file} 2>&1"
+    )
 
     try:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
@@ -607,14 +626,13 @@ def setup_cron_for_cloud_pulling():
         if cron_line not in existing_cron:
             new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
             subprocess.run(["crontab", "-"], input=new_cron, text=True)
-            frappe.publish_realtime("msg", "Cloud pulling cron set successfully!", user="Administrator")
+            frappe.publish_realtime("msg", f"Cloud pulling cron set successfully for {site}!", user="Administrator")
         else:
-            frappe.publish_realtime("msg", "Cloud pulling cron already exists, skipping...", user="Administrator")
+            frappe.publish_realtime("msg", f"Cloud pulling cron already exists for {site}, skipping...", user="Administrator")
 
     except Exception as e:
-        frappe.log_error(message=str(e), title="Setup Cloud Pulling Cron Error")
-        frappe.publish_realtime("msg", f"Failed to setup cloud pulling cron: {str(e)}", user="Administrator")
-
+        frappe.log_error(message=str(e), title=f"Setup Cloud Pulling Cron Error ({site})")
+        frappe.publish_realtime("msg", f"Failed to setup cloud pulling cron for {site}: {str(e)}", user="Administrator")
 
 @frappe.whitelist()
 def sync_from_remote():
