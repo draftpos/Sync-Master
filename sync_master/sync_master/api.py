@@ -27,7 +27,7 @@ def force_sync(modules):
             elif module == "price_lists":
                 results["price_lists"] = sync_price_lists()  # to implement
             elif module == "sales_invoices":
-                results["sales_invoices"] = push_sales()  # to implement
+                results["sales_invoices"] = push_pending_invoices()  # to implement
             else:
                 results[module] = "Unknown module"
         except Exception as e:
@@ -430,3 +430,130 @@ def create_outbox_record(doc, method):
             "retry_count": 0
         }).insert(ignore_permissions=True)
         print(f"🔹 Created Outbox record for invoice: {doc.name}")
+ 
+import frappe
+import requests
+from requests.auth import HTTPBasicAuth
+from datetime import datetime
+import frappe
+import requests
+from requests.auth import HTTPBasicAuth
+from datetime import datetime
+import frappe
+from datetime import datetime
+
+@frappe.whitelist()
+def push_pending_invoices():
+    """
+    Push all pending Sales Invoice Outbox records to the remote Frappe site.
+    Builds full Sales Invoice doc with defaults to avoid ValidationErrors.
+    Cron-friendly with logging.
+    """
+    print("🚀 Starting push_pending_invoices()")
+
+    # Fetch sync settings
+    settings = frappe.get_single("Sync Settings")
+    print("🔹 Sync Settings fetched:")
+    for field in settings.meta.fields:
+        print(f"   {field.label}: {settings.get(field.fieldname)}")
+
+    cloud_url = settings.cloud_site_url
+    api_key = settings.api_key
+    api_secret = settings.api_secret
+    remote_company = settings.remote_company
+    processed_count = 0
+
+    # Fetch pending invoices
+    pending = frappe.get_all(
+        "Sales Invoice Outbox",
+        filters={"status": "Pending"},
+        fields=["name", "sales_invoice", "retry_count"]
+    )
+    print(f"🔹 Pending invoices fetched: {len(pending)}")
+
+    for outbox in pending:
+        try:
+            invoice = frappe.get_doc("Sales Invoice", outbox.sales_invoice)
+            print(f"🔹 Preparing invoice {invoice.name} for remote push")
+
+            # Helper to get user/default values
+            def get_default(fieldname, fallback=None):
+                val = getattr(invoice, fieldname, None)
+                if not val:
+                    val = fallback
+                if not val:
+                    frappe.throw(f"{fieldname} missing for invoice {invoice.name}")
+                return val
+
+            si_doc = {
+                "doctype": "Sales Invoice",
+                "company": remote_company,
+                "customer": get_default("customer"),
+                "posting_date": str(invoice.posting_date),
+                "posting_time": str(invoice.posting_time),
+                "due_date": str(invoice.due_date),
+                "currency": get_default("currency", "USD"),
+                "conversion_rate": get_default("conversion_rate", 1.0),
+                "update_stock": invoice.get("update_stock", 1),
+                "cost_center": invoice.cost_center or "",
+                "set_warehouse": invoice.set_warehouse,
+                "taxes_and_charges": invoice.get("taxes_and_charges"),
+                "payments": invoice.get("payments", []),
+                "items": [
+                    {
+                        "item_code": d.item_code or "",
+                        "item_name": d.item_name or "",
+                        "qty": d.qty or 0,
+                        "rate": d.rate or 0,
+                        "warehouse": d.warehouse or "",
+                        "cost_center": d.cost_center or "",
+                        "income_account": d.income_account or ""
+                    } for d in invoice.items
+                ]
+            }
+
+            # Send to remote using REST API
+            import requests
+            from requests.auth import HTTPBasicAuth
+
+            endpoint = f"{cloud_url}/api/resource/Sales Invoice"
+            print(f"🔹 Sending POST request to {endpoint}")
+            response = requests.post(
+                endpoint,
+                auth=HTTPBasicAuth(api_key, api_secret),
+                json=si_doc,
+                timeout=60
+            )
+            print(f"🔹 Response status: {response.status_code}")
+
+            # Update outbox
+            invoice_outbox = frappe.get_doc("Sales Invoice Outbox", outbox.name)
+            invoice_outbox.last_attempt = datetime.now()
+            invoice_outbox.retry_count += 1
+
+            if response.status_code in (200, 201):
+                invoice_outbox.status = "Synced"
+                invoice_outbox.save(ignore_permissions=True)
+                print(f"✅ Synced invoice {invoice.name}")
+            else:
+                invoice_outbox.status = "Failed"
+                invoice_outbox.error_message = f"{response.status_code} - {response.text}"
+                invoice_outbox.save(ignore_permissions=True)
+                frappe.log_error(
+                    message=f"Failed invoice {invoice.name}: {response.status_code} - {response.text}",
+                    title="Push Sales Invoice"
+                )
+                print(f"❌ Failed invoice {invoice.name}: {response.status_code} - {response.text}")
+
+            processed_count += 1
+
+        except Exception as e:
+            print(f"❌ Exception while processing {outbox.sales_invoice}: {str(e)}")
+            frappe.log_error(
+                message=f"Exception for Outbox {outbox.sales_invoice}: {str(e)}",
+                title="Push Sales Invoice Exception"
+            )
+            continue
+
+    print(f"🎉 Processed {processed_count} invoices")
+    return f"Processed {processed_count} invoices"

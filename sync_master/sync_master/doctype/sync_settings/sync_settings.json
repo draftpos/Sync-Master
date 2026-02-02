@@ -7,12 +7,12 @@
  "field_order": [
   "remote_site_details_section",
   "cloud_site_url",
+  "remote_company",
   "column_break_qfin",
   "api_key",
   "api_secret_column",
   "api_secret",
   "section_break_fcmv",
-  "last_sales_push",
   "price_list_last_sync",
   "column_break_lnkc",
   "last_item_sync",
@@ -39,11 +39,6 @@
    "fieldname": "section_break_fcmv",
    "fieldtype": "Section Break",
    "label": "Timestamps"
-  },
-  {
-   "fieldname": "last_sales_push",
-   "fieldtype": "Datetime",
-   "label": "Last Sales Push"
   },
   {
    "fieldname": "remote_site_details_section",
@@ -95,13 +90,19 @@
    "fieldtype": "Datetime",
    "label": "Price List Last Sync ",
    "read_only": 1
+  },
+  {
+   "fieldname": "remote_company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-02 08:46:38.688276",
+ "modified": "2026-02-02 11:48:12.567884",
  "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",
