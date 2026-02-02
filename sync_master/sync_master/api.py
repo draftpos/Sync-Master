@@ -21,15 +21,15 @@ def force_sync(modules):
     for module in modules:
         try:
             if module == "items":
-                results["items"] = sync_items()  # your item fetch function
+                results["items"] = sync_items() 
             elif module == "customers":
-                results["customers"] = sync_customers()  # to implement
+                results["customers"] = sync_customers() 
             elif module == "item_prices":
-                results["item_prices"] = sync_item_prices()  # to implement
+                results["item_prices"] = sync_item_prices() 
             elif module == "price_lists":
-                results["price_lists"] = sync_price_lists()  # to implement
+                results["price_lists"] = sync_price_lists()  
             elif module == "sales_invoices":
-                results["sales_invoices"] = push_pending_invoices()  # to implement
+                results["sales_invoices"] = push_pending_invoices() 
             else:
                 results[module] = "Unknown module"
         except Exception as e:
@@ -549,37 +549,82 @@ def push_pending_invoices():
     print(f"🎉 Processed {processed_count} invoices")
     return f"Processed {processed_count} invoices"
 
+import frappe
+import subprocess
+
 @frappe.whitelist()
 def setup_cron():
     """
-    Sets up a cron job to run push_pending_invoices periodically.
-    Ensures it won't duplicate if already installed.
+    Installs both cron jobs: Sales Invoice push & cloud pulling (items, customers, etc.)
     """
-    frappe.publish_realtime("msg", "Setting up invoice push cron...", user="Administrator")
+    setup_cron_for_sales_invoice()
+    setup_cron_for_cloud_pulling()
+
+
+@frappe.whitelist()
+def setup_cron_for_sales_invoice():
+    """
+    Sets up cron job to push pending Sales Invoices periodically.
+    """
+    frappe.publish_realtime("msg", "Setting up Sales Invoice push cron...", user="Administrator")
 
     bench_path = "/home/frappe/frappe-bench"
-    cron_line = f"*/5 * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.push_pending_invoices >> {bench_path}/logs/push_invoices.log 2>&1"
+    log_file = f"{bench_path}/logs/push_invoices.log"
+    cron_line = f"* * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.push_pending_invoices >> {log_file} 2>&1"
 
     try:
-        # Get existing crontab
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         existing_cron = result.stdout if result.returncode == 0 else ""
 
-        # Check if the cron already exists
         if cron_line not in existing_cron:
             new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
-            process = subprocess.run(["crontab", "-"], input=new_cron, text=True)
-            frappe.publish_realtime("msg", "Invoice push cron set successfully!", user="Administrator")
+            subprocess.run(["crontab", "-"], input=new_cron, text=True)
+            frappe.publish_realtime("msg", "Sales Invoice push cron set successfully!", user="Administrator")
         else:
-            frappe.publish_realtime("msg", "Invoice push cron already exists, skipping...", user="Administrator")
+            frappe.publish_realtime("msg", "Sales Invoice push cron already exists, skipping...", user="Administrator")
 
     except Exception as e:
-        frappe.log_error(message=str(e), title="Setup Cron Error")
-        frappe.publish_realtime("msg", f"Failed to setup cron: {str(e)}", user="Administrator")
+        frappe.log_error(message=str(e), title="Setup Sales Invoice Cron Error")
+        frappe.publish_realtime("msg", f"Failed to setup Sales Invoice cron: {str(e)}", user="Administrator")
 
-LOG_PATH = os.path.join(os.path.dirname(__file__), "logs", "cron.logs")
 
-def log(msg):
-    timestamp = now()
-    with open(LOG_PATH, "a") as f:
-        f.write(f"{timestamp} | {msg}\n")
+@frappe.whitelist()
+def setup_cron_for_cloud_pulling():
+    """
+    Sets up cron job to sync items, customers, price lists, and item prices from cloud periodically.
+    """
+    frappe.publish_realtime("msg", "Setting up cloud pulling cron...", user="Administrator")
+
+    bench_path = "/home/frappe/frappe-bench"
+    log_file = f"{bench_path}/logs/cloud_pull.log"
+    cron_line = f"* * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.sync_from_remote >> {log_file} 2>&1"
+
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        existing_cron = result.stdout if result.returncode == 0 else ""
+
+        if cron_line not in existing_cron:
+            new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
+            subprocess.run(["crontab", "-"], input=new_cron, text=True)
+            frappe.publish_realtime("msg", "Cloud pulling cron set successfully!", user="Administrator")
+        else:
+            frappe.publish_realtime("msg", "Cloud pulling cron already exists, skipping...", user="Administrator")
+
+    except Exception as e:
+        frappe.log_error(message=str(e), title="Setup Cloud Pulling Cron Error")
+        frappe.publish_realtime("msg", f"Failed to setup cloud pulling cron: {str(e)}", user="Administrator")
+
+
+@frappe.whitelist()
+def sync_from_remote():
+    """
+    Enqueues a background job to sync items, customers, price lists, and item prices from cloud.
+    """
+    frappe.enqueue(
+        'sync_master.sync_master.api.force_sync',
+        queue='long',
+        modules=["items", "customers", "item_prices", "price_lists"],
+        timeout=600
+    )
+    frappe.publish_realtime("msg", "Cloud sync job has been enqueued!", user="Administrator")
+    return "Cloud sync job enqueued successfully"
