@@ -24,6 +24,8 @@ def force_sync(modules):
                 results["customers"] = sync_customers()  # to implement
             elif module == "item_prices":
                 results["item_prices"] = sync_item_prices()  # to implement
+            elif module == "price_lists":
+                results["price_lists"] = sync_price_lists()  # to implement
             elif module == "sales_invoices":
                 results["sales_invoices"] = push_sales()  # to implement
             else:
@@ -334,3 +336,97 @@ def ensure_price_list(price_list):
         "enabled": 1,
         "selling": 1
     }).insert(ignore_permissions=True)
+
+def sync_price_lists():
+    def debug(msg):
+        print(msg)
+        frappe.log_error(message=msg, title="Price List Sync")
+
+    debug("🔹 Starting sync_price_lists()")
+
+    try:
+        settings = frappe.get_single("Sync Settings")
+        cloud_url = settings.cloud_site_url
+        api_key = settings.api_key
+        api_secret = settings.api_secret
+        last_synced_at = settings.price_list_last_sync or "1970-01-01 00:00:00"
+
+        endpoint = f"{cloud_url}/api/resource/Price List"
+        params = {
+            "filters": f'[["modified", ">", "{last_synced_at}"]]',
+            "fields": json.dumps([
+                "name",
+                "price_list_name",
+                "currency",
+                "selling",
+                "buying",
+                "enabled",
+                "modified"
+            ]),
+            "order_by": "modified asc",
+            "limit_page_length": 500
+        }
+
+        r = requests.get(
+            endpoint,
+            params=params,
+            auth=HTTPBasicAuth(api_key, api_secret),
+            timeout=30
+        )
+
+        debug(f"🔹 HTTP GET returned {r.status_code}")
+
+        if r.status_code != 200:
+            frappe.throw(f"❌ Price List fetch failed: {r.text}")
+
+        price_lists = r.json().get("data", [])
+        debug(f"🔹 Fetched {len(price_lists)} price lists")
+
+        for pl in price_lists:
+            name = pl["name"]
+
+            if frappe.db.exists("Price List", name):
+                doc = frappe.get_doc("Price List", name)
+                doc.currency = pl["currency"]
+                doc.selling = pl["selling"]
+                doc.buying = pl["buying"]
+                doc.enabled = pl["enabled"]
+                doc.save(ignore_permissions=True)
+                print(f"🔁 Updated Price List: {name}")
+            else:
+                frappe.get_doc({
+                    "doctype": "Price List",
+                    "price_list_name": name,
+                    "currency": pl["currency"],
+                    "selling": pl["selling"],
+                    "buying": pl["buying"],
+                    "enabled": pl["enabled"]
+                }).insert(ignore_permissions=True)
+                print(f"✅ Created Price List: {name}")
+
+        if price_lists:
+            settings.db_set(
+                "price_list_last_sync",
+                price_lists[-1]["modified"]
+            )
+
+        debug("🎉 Price List sync complete")
+        return f"Synced {len(price_lists)} price lists"
+
+    except Exception as e:
+        debug(f"❌ Exception in sync_price_lists: {str(e)}")
+        raise
+
+def create_outbox_record(doc, method):
+    """
+    Hook for Sales Invoice submit.
+    Creates an Outbox record to track syncing to cloud.
+    """
+    if not frappe.db.exists("Sales Invoice Outbox", {"sales_invoice": doc.name}):
+        frappe.get_doc({
+            "doctype": "Sales Invoice Outbox",
+            "sales_invoice": doc.name,
+            "status": "Pending",
+            "retry_count": 0
+        }).insert(ignore_permissions=True)
+        print(f"🔹 Created Outbox record for invoice: {doc.name}")

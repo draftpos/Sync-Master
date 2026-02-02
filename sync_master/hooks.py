@@ -250,3 +250,9 @@ fixtures = [
         ]
     }
 ]
+
+doc_events = {
+    "Sales Invoice": {
+        "on_submit": "sync_master.sync_master.api.create_outbox_record"
+    }
+}

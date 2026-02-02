@@ -13,6 +13,7 @@
   "api_secret",
   "section_break_fcmv",
   "last_sales_push",
+  "price_list_last_sync",
   "column_break_lnkc",
   "last_item_sync",
   "column_break_gyao",
@@ -88,13 +89,19 @@
    "fieldtype": "Datetime",
    "label": "Price Last Sync ",
    "read_only": 1
+  },
+  {
+   "fieldname": "price_list_last_sync",
+   "fieldtype": "Datetime",
+   "label": "Price List Last Sync ",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-02 08:37:25.495973",
+ "modified": "2026-02-02 08:46:38.688276",
  "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",
