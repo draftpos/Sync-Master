@@ -2,7 +2,9 @@ import frappe
 import requests
 from requests.auth import HTTPBasicAuth
 import json
-
+from datetime import datetime
+import os
+import subprocess
 
 @frappe.whitelist()
 def force_sync(modules):
@@ -430,17 +432,6 @@ def create_outbox_record(doc, method):
             "retry_count": 0
         }).insert(ignore_permissions=True)
         print(f"🔹 Created Outbox record for invoice: {doc.name}")
- 
-import frappe
-import requests
-from requests.auth import HTTPBasicAuth
-from datetime import datetime
-import frappe
-import requests
-from requests.auth import HTTPBasicAuth
-from datetime import datetime
-import frappe
-from datetime import datetime
 
 @frappe.whitelist()
 def push_pending_invoices():
@@ -557,3 +548,38 @@ def push_pending_invoices():
 
     print(f"🎉 Processed {processed_count} invoices")
     return f"Processed {processed_count} invoices"
+
+@frappe.whitelist()
+def setup_cron():
+    """
+    Sets up a cron job to run push_pending_invoices periodically.
+    Ensures it won't duplicate if already installed.
+    """
+    frappe.publish_realtime("msg", "Setting up invoice push cron...", user="Administrator")
+
+    bench_path = "/home/frappe/frappe-bench"
+    cron_line = f"*/5 * * * * cd {bench_path} && ./env/bin/bench execute sync_master.sync_master.api.push_pending_invoices >> {bench_path}/logs/push_invoices.log 2>&1"
+
+    try:
+        # Get existing crontab
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        existing_cron = result.stdout if result.returncode == 0 else ""
+
+        # Check if the cron already exists
+        if cron_line not in existing_cron:
+            new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
+            process = subprocess.run(["crontab", "-"], input=new_cron, text=True)
+            frappe.publish_realtime("msg", "Invoice push cron set successfully!", user="Administrator")
+        else:
+            frappe.publish_realtime("msg", "Invoice push cron already exists, skipping...", user="Administrator")
+
+    except Exception as e:
+        frappe.log_error(message=str(e), title="Setup Cron Error")
+        frappe.publish_realtime("msg", f"Failed to setup cron: {str(e)}", user="Administrator")
+
+LOG_PATH = os.path.join(os.path.dirname(__file__), "logs", "cron.logs")
+
+def log(msg):
+    timestamp = now()
+    with open(LOG_PATH, "a") as f:
+        f.write(f"{timestamp} | {msg}\n")
