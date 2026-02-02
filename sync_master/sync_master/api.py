@@ -577,7 +577,7 @@ def setup_cron_for_sales_invoice():
 
     frappe.publish_realtime("msg", f"Setting up Sales Invoice push cron for {site}...", user="Administrator")
 
-    bench_path = "/home/munyaradzi/Documents/frappe-bench"
+    bench_path = "/home/frappe/frappe-bench"
     log_file = f"{bench_path}/logs/push_invoices_{site}.log"
     cron_line = (
         f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
@@ -612,7 +612,7 @@ def setup_cron_for_cloud_pulling():
 
     frappe.publish_realtime("msg", f"Setting up cloud pulling cron for {site}...", user="Administrator")
 
-    bench_path = "/home/munyaradzi/Documents/frappe-bench"
+    bench_path = "/home/frappe/frappe-bench"
     log_file = f"{bench_path}/logs/cloud_pull_{site}.log"
     cron_line = (
         f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
