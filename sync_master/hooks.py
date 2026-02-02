@@ -256,3 +256,5 @@ doc_events = {
         "on_submit": "sync_master.sync_master.api.create_outbox_record"
     }
 }
+
+after_install = "sync_master.sync_master.api.setup_cron"

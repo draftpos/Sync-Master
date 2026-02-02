@@ -8,16 +8,9 @@ import subprocess
 
 @frappe.whitelist()
 def force_sync(modules):
-    """
-    modules: list of strings ['items', 'customers', 'price_lists', 'sales_invoices']
-    Triggers the corresponding sync function for each selected module.
-    """
-    # Handle case if modules comes as JSON string
     if isinstance(modules, str):
         modules = json.loads(modules)
-
     results = {}
-
     for module in modules:
         try:
             if module == "items":
@@ -33,12 +26,11 @@ def force_sync(modules):
             else:
                 results[module] = "Unknown module"
         except Exception as e:
-            results[module] = f"Failed: {str(e)}"
+         results[module] = f"Failed: {str(e)}"
 
     return {"success": True, "details": results}
 
 def sync_items():
-    # Helper to print + log error
     def debug(msg):
         print(msg)
         frappe.log_error(message=msg, title="Sync Debug")
@@ -554,11 +546,21 @@ import subprocess
 
 @frappe.whitelist()
 def setup_cron():
-    """
-    Installs both cron jobs: Sales Invoice push & cloud pulling (items, customers, etc.)
-    """
-    setup_cron_for_sales_invoice()
-    setup_cron_for_cloud_pulling()
+    try:
+        setup_cron_for_sales_invoice()
+        setup_cron_for_cloud_pulling()
+
+        return {
+            "success": True,
+            "message": "All cron jobs installed"
+        }
+
+    except Exception as e:
+        frappe.log_error(message=str(e), title="Setup Cron Error")
+        return {
+            "success": False,
+            "message": str(e)
+        }
 
 
 @frappe.whitelist()
@@ -586,7 +588,6 @@ def setup_cron_for_sales_invoice():
     except Exception as e:
         frappe.log_error(message=str(e), title="Setup Sales Invoice Cron Error")
         frappe.publish_realtime("msg", f"Failed to setup Sales Invoice cron: {str(e)}", user="Administrator")
-
 
 @frappe.whitelist()
 def setup_cron_for_cloud_pulling():
