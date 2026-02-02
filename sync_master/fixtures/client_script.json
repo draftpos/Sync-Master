@@ -1,0 +1,13 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Client Script",
+  "dt": "Sync Settings",
+  "enabled": 1,
+  "modified": "2026-01-31 10:06:42.938293",
+  "module": "Sync Master",
+  "name": "force sync",
+  "script": "frappe.ui.form.on('Sync Settings', {\n    refresh(frm) {\n        // Add Force Sync button in form header\n        frm.add_custom_button('Force Sync', () => {\n            let d = new frappe.ui.Dialog({\n                title: 'Force Sync Modules',\n                fields: [\n                    { fieldtype: 'Check', fieldname: 'items', label: 'Items' },\n                    { fieldtype: 'Check', fieldname: 'customers', label: 'Customers' },\n                    { fieldtype: 'Check', fieldname: 'price_lists', label: 'Price Lists' },\n                    { fieldtype: 'Check', fieldname: 'sales_invoices', label: 'Sales Invoices' }\n                ],\n                primary_action_label: 'Sync Now',\n                primary_action(values) {\n                    let selected = [];\n                    for(let key in values){\n                        if(values[key]) selected.push(key);\n                    }\n\n                    if(selected.length === 0){\n                        frappe.msgprint('Please select at least one module to sync');\n                        return;\n                    }\n\n                    // Call backend API\n                    frappe.call({\n                        method: 'sync_master.api.force_sync',\n                        args: { modules: selected },\n                        callback: function(r) {\n                            if(r.message.success){\n                                frappe.show_alert({ message: 'Force sync started for: ' + selected.join(', '), indicator: 'green' });\n                            } else {\n                                frappe.msgprint('Force sync failed!');\n                            }\n                            d.hide();\n                        }\n                    });\n                }\n            });\n            d.show();\n        });\n    }\n});\n",
+  "view": "Form"
+ }
+]

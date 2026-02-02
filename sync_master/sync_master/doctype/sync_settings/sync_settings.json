@@ -1,0 +1,119 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-01-31 09:07:58.102917",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "remote_site_details_section",
+  "cloud_site_url",
+  "column_break_qfin",
+  "api_key",
+  "api_secret_column",
+  "api_secret",
+  "section_break_fcmv",
+  "last_sales_push",
+  "column_break_lnkc",
+  "last_item_sync",
+  "column_break_gyao",
+  "customer_last_sync",
+  "column_break_iejf",
+  "price_last_sync"
+ ],
+ "fields": [
+  {
+   "fieldname": "cloud_site_url",
+   "fieldtype": "Data",
+   "label": "Cloud Site URL"
+  },
+  {
+   "fieldname": "column_break_qfin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "api_secret_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_fcmv",
+   "fieldtype": "Section Break",
+   "label": "Timestamps"
+  },
+  {
+   "fieldname": "last_sales_push",
+   "fieldtype": "Datetime",
+   "label": "Last Sales Push"
+  },
+  {
+   "fieldname": "remote_site_details_section",
+   "fieldtype": "Section Break",
+   "label": "Remote SIte Details"
+  },
+  {
+   "fieldname": "column_break_lnkc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Data",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "last_item_sync",
+   "fieldtype": "Datetime",
+   "label": "Item Last Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gyao",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer_last_sync",
+   "fieldtype": "Datetime",
+   "label": "Customer Last Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_iejf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "price_last_sync",
+   "fieldtype": "Datetime",
+   "label": "Price Last Sync ",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-02-02 08:37:25.495973",
+ "modified_by": "Administrator",
+ "module": "Sync Master",
+ "name": "Sync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
