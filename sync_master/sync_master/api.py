@@ -580,7 +580,7 @@ def setup_cron_for_sales_invoice():
     bench_path = "/home/frappe/frappe-bench"
     log_file = f"{bench_path}/logs/push_invoices_{site}.log"
     cron_line = (
-        f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
+        f"* * * * * cd {bench_path} && /home/frappe/env/bin/bench  --site {site} "
         f"execute sync_master.sync_master.api.push_pending_invoices >> {log_file} 2>&1"
     )
 
@@ -615,7 +615,7 @@ def setup_cron_for_cloud_pulling():
     bench_path = "/home/frappe/frappe-bench"
     log_file = f"{bench_path}/logs/cloud_pull_{site}.log"
     cron_line = (
-        f"* * * * * cd {bench_path} && ./env/bin/bench --site {site} "
+        f"* * * * * cd {bench_path} && /home/frappe/env/bin/bench --site {site} "
         f"execute sync_master.sync_master.api.sync_from_remote >> {log_file} 2>&1"
     )
 
