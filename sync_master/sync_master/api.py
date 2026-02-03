@@ -637,13 +637,22 @@ def setup_cron_for_cloud_pulling():
 @frappe.whitelist()
 def sync_from_remote():
     """
-    Enqueues a background job to sync items, customers, price lists, and item prices from cloud.
+    Enqueues a background job to sync all master data from cloud.
     """
     frappe.enqueue(
-        'sync_master.sync_master.api.force_sync',
-        queue='long',
-        modules=["items", "customers", "item_prices", "price_lists"],
+        "sync_master.sync_master.api.call_all_pulls",
+        queue="long",
         timeout=600
     )
-    frappe.publish_realtime("msg", "Cloud sync job has been enqueued!", user="Administrator")
+    frappe.publish_realtime(
+        "msg",
+        "Cloud sync job has been enqueued!",
+        user="Administrator"
+    )
     return "Cloud sync job enqueued successfully"
+
+def call_all_pulls():
+    results["items"] = sync_items() 
+    results["item_prices"] = sync_item_prices() 
+    results["customers"] = sync_customers() 
+    results["price_lists"] = sync_price_lists()  
