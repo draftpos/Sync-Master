@@ -652,7 +652,21 @@ def sync_from_remote():
     return "Cloud sync job enqueued successfully"
 
 def call_all_pulls():
-    results["items"] = sync_items() 
-    results["item_prices"] = sync_item_prices() 
-    results["customers"] = sync_customers() 
-    results["price_lists"] = sync_price_lists()  
+    results = {}
+
+    for name, fn in {
+        "items": sync_items,
+        "item_prices": sync_item_prices,
+        "customers": sync_customers,
+        "price_lists": sync_price_lists,
+    }.items():
+        try:
+            results[name] = fn()
+        except Exception as e:
+            results[name] = f"Failed: {str(e)}"
+            frappe.log_error(
+                message=frappe.get_traceback(),
+                title=f"Cloud Pull Failed: {name}"
+            )
+
+    return results
