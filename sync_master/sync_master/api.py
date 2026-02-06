@@ -131,7 +131,7 @@ def sync_customers():
 
     try:
         settings = frappe.get_single("Sync Settings")
-        cloud_url = settings.cloud_site_url
+        cloud_url = settings.cloud_site_url.rstrip("/")
         api_key = settings.api_key
         api_secret = settings.api_secret
         last_synced_at = settings.customer_last_sync or "1970-01-01 00:00:00"
@@ -156,15 +156,27 @@ def sync_customers():
         debug(f"🔹 HTTP GET returned {response.status_code}")
 
         if response.status_code != 200:
-            msg = f"❌ Failed to fetch customers: {response.text}"
-            debug(msg)
-            frappe.throw(msg)
+            raise Exception(f"Failed to fetch customers: {response.text}")
 
         customers = response.json().get("data", [])
         debug(f"🔹 Fetched {len(customers)} customers")
 
         if not customers:
             return "No new customers to sync"
+
+        # Try resolving defaults once (cheap + safe)
+        default_warehouse = None
+        default_cost_center = None
+
+        if frappe.db.has_column("Customer", "custom_warehouse"):
+            default_warehouse = frappe.db.get_value(
+                "Warehouse", {"is_group": 0}, "name"
+            )
+
+        if frappe.db.has_column("Customer", "custom_cost_center"):
+            default_cost_center = frappe.db.get_value(
+                "Cost Center", {"is_group": 0}, "name"
+            )
 
         for cust in customers:
             name = cust.get("name")
@@ -176,13 +188,28 @@ def sync_customers():
             print(f"🔹 Processing customer: {cust}")
 
             if not name:
-                msg = f"❌ Skipped customer, missing name: {cust}"
-                print(msg)
-                frappe.log_error(message=msg, title="Customer Sync Skipped")
+                debug(f"❌ Skipped customer, missing name: {cust}")
                 continue
 
             ensure_customer_group(customer_group)
             ensure_territory(territory)
+
+            # Guard: mandatory custom fields but no defaults
+            if (
+                frappe.db.has_column("Customer", "custom_warehouse")
+                and frappe.get_meta("Customer").get_field("custom_warehouse").reqd
+                and not default_warehouse
+            ):
+                debug(f"⚠️ Skipping {name}: missing default warehouse")
+                continue
+
+            if (
+                frappe.db.has_column("Customer", "custom_cost_center")
+                and frappe.get_meta("Customer").get_field("custom_cost_center").reqd
+                and not default_cost_center
+            ):
+                debug(f"⚠️ Skipping {name}: missing default cost center")
+                continue
 
             if frappe.db.exists("Customer", name):
                 doc = frappe.get_doc("Customer", name)
@@ -190,18 +217,32 @@ def sync_customers():
                 doc.customer_group = customer_group
                 doc.territory = territory
                 doc.customer_type = customer_type
+
+                if hasattr(doc, "custom_warehouse") and default_warehouse:
+                    doc.custom_warehouse = doc.custom_warehouse or default_warehouse
+
+                if hasattr(doc, "custom_cost_center") and default_cost_center:
+                    doc.custom_cost_center = doc.custom_cost_center or default_cost_center
+
                 doc.save(ignore_permissions=True)
                 print(f"🔁 Updated customer: {name}")
+
             else:
-                frappe.get_doc({
+                payload = {
                     "doctype": "Customer",
                     "name": name,
                     "customer_name": customer_name,
                     "customer_group": customer_group,
                     "territory": territory,
                     "customer_type": customer_type
-                }).insert(ignore_permissions=True)
+                }
 
+                if default_warehouse:
+                    payload["custom_warehouse"] = default_warehouse
+                if default_cost_center:
+                    payload["custom_cost_center"] = default_cost_center
+
+                frappe.get_doc(payload).insert(ignore_permissions=True)
                 print(f"✅ Created customer: {name}")
 
         last_modified = customers[-1].get("modified") or last_synced_at
@@ -213,6 +254,7 @@ def sync_customers():
     except Exception as e:
         debug(f"❌ Exception in sync_customers: {str(e)}")
         raise
+
 
 def ensure_customer_group(group):
     if not group:
@@ -425,214 +467,138 @@ def create_outbox_record(doc, method):
         }).insert(ignore_permissions=True)
         print(f"🔹 Created Outbox record for invoice: {doc.name}")
 
+import frappe
+from datetime import datetime
+import requests
+from requests.auth import HTTPBasicAuth
+
+
 @frappe.whitelist()
 def push_pending_invoices():
     """
-    Push all pending Sales Invoice Outbox records to the remote Frappe site.
-    Builds full Sales Invoice doc with defaults to avoid ValidationErrors.
-    Cron-friendly with logging.
+    Push pending Sales Invoices to remote Frappe site.
+    On success:
+      - Marks local Sales Invoice as synced
+      - Stores remote Sales Invoice number in custom_reference
+      - Marks outbox as Synced
+    Safe for cron.
     """
-    print("🚀 Starting push_pending_invoices()")
 
-    # Fetch sync settings
+    print("🚀 Starting push_pending_invoices")
+
     settings = frappe.get_single("Sync Settings")
-    print("🔹 Sync Settings fetched:")
-    for field in settings.meta.fields:
-        print(f"   {field.label}: {settings.get(field.fieldname)}")
 
-    cloud_url = settings.cloud_site_url
+    cloud_url = settings.cloud_site_url.rstrip("/")
     api_key = settings.api_key
     api_secret = settings.api_secret
     remote_company = settings.remote_company
-    processed_count = 0
 
-    # Fetch pending invoices
+    processed = 0
+
     pending = frappe.get_all(
         "Sales Invoice Outbox",
         filters={"status": "Pending"},
         fields=["name", "sales_invoice", "retry_count"]
     )
-    print(f"🔹 Pending invoices fetched: {len(pending)}")
 
-    for outbox in pending:
+    print(f"🔹 Found {len(pending)} pending invoices")
+
+    for row in pending:
         try:
-            invoice = frappe.get_doc("Sales Invoice", outbox.sales_invoice)
-            print(f"🔹 Preparing invoice {invoice.name} for remote push")
+            invoice = frappe.get_doc("Sales Invoice", row.sales_invoice)
 
-            # Helper to get user/default values
-            def get_default(fieldname, fallback=None):
-                val = getattr(invoice, fieldname, None)
-                if not val:
-                    val = fallback
-                if not val:
-                    frappe.throw(f"{fieldname} missing for invoice {invoice.name}")
-                return val
+            # 🔒 Skip already-synced invoices
+            if invoice.get("custom_synced"):
+                print(f"⏭ {invoice.name} already synced, skipping")
+                continue
 
+            print(f"📦 Preparing {invoice.name}")
+
+            # Build Sales Invoice payload
             si_doc = {
                 "doctype": "Sales Invoice",
                 "company": remote_company,
-                "customer": get_default("customer"),
+                "customer": invoice.customer,
                 "posting_date": str(invoice.posting_date),
                 "posting_time": str(invoice.posting_time),
                 "due_date": str(invoice.due_date),
-                "currency": get_default("currency", "USD"),
-                "conversion_rate": get_default("conversion_rate", 1.0),
+                "currency": invoice.currency or "USD",
+                "conversion_rate": invoice.conversion_rate or 1,
                 "update_stock": invoice.get("update_stock", 1),
-                "cost_center": invoice.cost_center or "",
                 "set_warehouse": invoice.set_warehouse,
-                "taxes_and_charges": invoice.get("taxes_and_charges"),
+                "cost_center": invoice.cost_center,
+                "taxes_and_charges": invoice.taxes_and_charges,
                 "payments": invoice.get("payments", []),
+                "reference_number":row.sales_invoice,
                 "items": [
                     {
-                        "item_code": d.item_code or "",
-                        "item_name": d.item_name or "",
-                        "qty": d.qty or 0,
-                        "rate": d.rate or 0,
-                        "warehouse": d.warehouse or "",
-                        "cost_center": d.cost_center or "",
-                        "income_account": d.income_account or ""
-                    } for d in invoice.items
+                        "item_code": d.item_code,
+                        "item_name": d.item_name,
+                        "qty": d.qty,
+                        "rate": d.rate,
+                        "warehouse": d.warehouse,
+                        "cost_center": d.cost_center,
+                        "income_account": d.income_account
+                    }
+                    for d in invoice.items
                 ]
             }
 
-            # Send to remote using REST API
-            import requests
-            from requests.auth import HTTPBasicAuth
+            endpoint = f"{cloud_url}/api/method/saas_api.www.api.cloud_invoice"
 
-            endpoint = f"{cloud_url}/api/resource/Sales Invoice"
-            print(f"🔹 Sending POST request to {endpoint}")
             response = requests.post(
                 endpoint,
                 auth=HTTPBasicAuth(api_key, api_secret),
                 json=si_doc,
                 timeout=60
             )
-            print(f"🔹 Response status: {response.status_code}")
+            resp_json = response.json()
+            remote_si = resp_json.get("message", {}).get("data", {}).get("name")
+            print(f"remote reference received--------------{remote_si}")
 
-            # Update outbox
-            invoice_outbox = frappe.get_doc("Sales Invoice Outbox", outbox.name)
-            invoice_outbox.last_attempt = datetime.now()
-            invoice_outbox.retry_count += 1
+            outbox = frappe.get_doc("Sales Invoice Outbox", row.name)
+            outbox.last_attempt = datetime.now()
+            outbox.retry_count += 1
 
+            # ✅ SUCCESS
             if response.status_code in (200, 201):
-                invoice_outbox.status = "Synced"
-                invoice_outbox.save(ignore_permissions=True)
-                print(f"✅ Synced invoice {invoice.name}")
-            else:
-                invoice_outbox.status = "Failed"
-                invoice_outbox.error_message = f"{response.status_code} - {response.text}"
-                invoice_outbox.save(ignore_permissions=True)
-                frappe.log_error(
-                    message=f"Failed invoice {invoice.name}: {response.status_code} - {response.text}",
-                    title="Push Sales Invoice"
-                )
-                print(f"❌ Failed invoice {invoice.name}: {response.status_code} - {response.text}")
+                resp_json = response.json()
+                remote_si = resp_json.get("message", {}).get("data", {}).get("name")
 
-            processed_count += 1
+                # Update local Sales Invoice (NO save)
+                invoice.db_set("custom_synced", 1)
+                invoice.db_set("custom_cloud_reference", remote_si)
+
+                outbox.status = "Synced"
+                outbox.save(ignore_permissions=True)
+
+                print(f"✅ {invoice.name} → {remote_si}")
+
+            # ❌ FAILURE
+            else:
+                outbox.status = "Failed"
+                outbox.error_message = f"{response.status_code} - {response.text}"
+                outbox.save(ignore_permissions=True)
+
+                frappe.log_error(
+                    title="Sales Invoice Sync Failed",
+                    message=f"{invoice.name}: {response.status_code} - {response.text}"
+                )
+
+                print(f"❌ Failed {invoice.name}")
+
+            processed += 1
 
         except Exception as e:
-            print(f"❌ Exception while processing {outbox.sales_invoice}: {str(e)}")
             frappe.log_error(
-                message=f"Exception for Outbox {outbox.sales_invoice}: {str(e)}",
-                title="Push Sales Invoice Exception"
+                title="Sales Invoice Sync Exception",
+                message=f"{row.sales_invoice}: {str(e)}"
             )
-            continue
+            print(f"🔥 Exception on {row.sales_invoice}: {e}")
 
-    print(f"🎉 Processed {processed_count} invoices")
-    return f"Processed {processed_count} invoices"
+    print(f"🎉 Finished. Processed {processed} invoices")
+    return f"Processed {processed} invoices"
 
-import frappe
-import subprocess
-
-@frappe.whitelist()
-def setup_cron():
-    try:
-        setup_cron_for_sales_invoice()
-        setup_cron_for_cloud_pulling()
-
-        return {
-            "success": True,
-            "message": "All cron jobs installed"
-        }
-
-    except Exception as e:
-        frappe.log_error(message=str(e), title="Setup Cron Error")
-        return {
-            "success": False,
-            "message": str(e)
-        }
-
-import subprocess
-import frappe
-
-@frappe.whitelist()
-def setup_cron_for_sales_invoice():
-    """
-    Sets up cron job to push pending Sales Invoices periodically for the site in Sync Settings.
-    """
-    settings = frappe.get_single("Sync Settings")
-    site = getattr(settings, "site_name", None)  # make sure you add 'site_name' field to the doctype
-    if not site:
-        frappe.throw("Site name not set in Sync Settings!")
-
-    frappe.publish_realtime("msg", f"Setting up Sales Invoice push cron for {site}...", user="Administrator")
-
-    bench_path = "/home/frappe/frappe-bench"
-    log_file = f"{bench_path}/logs/push_invoices_{site}.log"
-    cron_line = (
-        f"* * * * * cd {bench_path} && /home/frappe/env/bin/bench --site {site} "
-        f"execute sync_master.sync_master.api.push_pending_invoices >> {log_file} 2>&1"
-    )
-
-    try:
-        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-        existing_cron = result.stdout if result.returncode == 0 else ""
-
-        if cron_line not in existing_cron:
-            new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
-            subprocess.run(["crontab", "-"], input=new_cron, text=True)
-            frappe.publish_realtime("msg", f"Sales Invoice push cron set successfully for {site}!", user="Administrator")
-        else:
-            frappe.publish_realtime("msg", f"Sales Invoice push cron already exists for {site}, skipping...", user="Administrator")
-
-    except Exception as e:
-        frappe.log_error(message=str(e), title=f"Setup Sales Invoice Cron Error ({site})")
-        frappe.publish_realtime("msg", f"Failed to setup Sales Invoice cron for {site}: {str(e)}", user="Administrator")
-
-
-@frappe.whitelist()
-def setup_cron_for_cloud_pulling():
-    """
-    Sets up cron job to sync items, customers, price lists, and item prices from cloud periodically for the site in Sync Settings.
-    """
-    settings = frappe.get_single("Sync Settings")
-    site = getattr(settings, "site_name", None)  # make sure you add 'site_name' field to the doctype
-    if not site:
-        frappe.throw("Site name not set in Sync Settings!")
-
-    frappe.publish_realtime("msg", f"Setting up cloud pulling cron for {site}...", user="Administrator")
-
-    bench_path = "/home/frappe/frappe-bench"
-    log_file = f"{bench_path}/logs/cloud_pull_{site}.log"
-    cron_line = (
-        f"* * * * * cd {bench_path} && /home/frappe/env/bin/bench --site {site} "
-        f"execute sync_master.sync_master.api.sync_from_remote >> {log_file} 2>&1"
-    )
-
-    try:
-        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-        existing_cron = result.stdout if result.returncode == 0 else ""
-
-        if cron_line not in existing_cron:
-            new_cron = existing_cron + ("\n" if existing_cron else "") + cron_line + "\n"
-            subprocess.run(["crontab", "-"], input=new_cron, text=True)
-            frappe.publish_realtime("msg", f"Cloud pulling cron set successfully for {site}!", user="Administrator")
-        else:
-            frappe.publish_realtime("msg", f"Cloud pulling cron already exists for {site}, skipping...", user="Administrator")
-
-    except Exception as e:
-        frappe.log_error(message=str(e), title=f"Setup Cloud Pulling Cron Error ({site})")
-        frappe.publish_realtime("msg", f"Failed to setup cloud pulling cron for {site}: {str(e)}", user="Administrator")
 
 @frappe.whitelist()
 def sync_from_remote():
@@ -670,3 +636,74 @@ def call_all_pulls():
             )
 
     return results
+
+import os
+import subprocess
+import frappe
+
+@frappe.whitelist()
+def setup_cloud_sync_service_for_site():
+    """
+    Creates a systemd service and timer for cloud sync for the current site.
+    The service and timer names include the site name for multi-tenancy support.
+    Saves the generated service name in Sync Settings.
+    """
+    # Get site name from Sync Settings
+    settings = frappe.get_single("Sync Settings")
+    site_name = getattr(settings, "site_name", None)
+    if not site_name:
+        frappe.throw("Site name not set in Sync Settings!")
+
+    # Paths
+    bench_path = "/home/frappe/frappe-bench"
+    python_bench = "/home/frappe/frappe-env/bin/bench"
+    service_name = f"cloud-sync-{site_name}.service"
+    timer_name = f"cloud-sync-{site_name}.timer"
+    service_path = os.path.join(bench_path, service_name)
+    timer_path = os.path.join(bench_path, timer_name)
+
+    # Service content
+    service_content = f"""[Unit]
+Description=Frappe Cloud Sync Job for {site_name}
+After=network.target
+
+[Service]
+Type=oneshot
+User=frappe
+WorkingDirectory={bench_path}
+ExecStart={python_bench} --site {site_name} execute sync_master.sync_master.api.sync_from_remote
+"""
+
+    # Timer content
+    timer_content = f"""[Unit]
+Description=Run Frappe Cloud Sync for {site_name} every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+
+    # Write service + timer files in user space
+    with open(service_path, "w") as f:
+        f.write(service_content)
+
+    with open(timer_path, "w") as f:
+        f.write(timer_content)
+
+    # Save generated service name in settings
+    settings.db_set("service_name_generated", service_name)
+
+    # Reload systemd (manual step still required) if you want, just print instructions
+    frappe.msgprint(
+        f"✅ Cloud sync service & timer files created for site: {site_name}\n\n"
+        f"Files:\n{service_path}\n{timer_path}\n\n"
+        f"Now you can manually move them to /etc/systemd/system/ and enable the timer:\n"
+        f"sudo mv {service_path} /etc/systemd/system/\n"
+        f"sudo mv {timer_path} /etc/systemd/system/\n"
+        f"sudo systemctl daemon-reload\n"
+        f"sudo systemctl enable --now {timer_name}\n"
+    )

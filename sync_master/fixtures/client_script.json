@@ -15,10 +15,10 @@
   "doctype": "Client Script",
   "dt": "Sync Settings",
   "enabled": 1,
-  "modified": "2026-02-02 12:21:53.211586",
+  "modified": "2026-02-04 10:32:28.360879",
   "module": "Sync Master",
   "name": "Install Cron",
-  "script": "frappe.ui.form.on('Sync Settings', {\n    refresh(frm) {\n        // Add single Install Native Cron button\n        frm.add_custom_button('Install Native Cron', () => {\n            frappe.call({\n                method: 'sync_master.sync_master.api.setup_cron',\n                callback: function(r) {\n                    if (r.message && r.message.success) {\n                        frappe.msgprint('Native cron installed successfully!');\n                    } else {\n                        frappe.msgprint('Failed to install cron. Check logs.');\n                    }\n                }\n            });\n        });\n    }\n});\n",
+  "script": "frappe.ui.form.on('Sync Settings', {\n    refresh(frm) {\n        // Add single Install Native Cron button\n        frm.add_custom_button('Install Native Cron', () => {\n            frappe.call({\n                method: 'sync_master.sync_master.api.setup_services',\n                callback: function(r) {\n                    if (r.message && r.message.success) {\n                        frappe.msgprint('Native cron installed successfully!');\n                    } else {\n                        frappe.msgprint('Failed to install cron. Check logs.');\n                    }\n                }\n            });\n        });\n    }\n});\n",
   "view": "Form"
  }
 ]

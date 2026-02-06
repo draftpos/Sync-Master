@@ -13,6 +13,8 @@
   "site_name",
   "api_secret_column",
   "api_secret",
+  "section_break_youq",
+  "service_name_generated",
   "section_break_fcmv",
   "price_list_last_sync",
   "column_break_lnkc",
@@ -111,14 +113,23 @@
    "in_list_view": 1,
    "label": "Site Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "service_name_generated",
+   "fieldtype": "Data",
+   "label": "Service Name Generated"
+  },
+  {
+   "fieldname": "section_break_youq",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-02 20:32:56.948710",
- "modified_by": "admin@gmail.com",
+ "modified": "2026-02-04 10:28:47.228348",
+ "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",
  "owner": "Administrator",
