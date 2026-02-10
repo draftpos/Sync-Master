@@ -121,7 +121,7 @@ def sync_items():
     except Exception as e:
         debug(f"❌ Exception in sync_items: {str(e)}")
         raise
-        
+
 def ensure_item_group(item_group):
     if not item_group:
         return
@@ -605,7 +605,7 @@ def sync_from_remote():
     """
     frappe.enqueue(
         "sync_master.sync_master.api.call_all_pulls",
-        queue="long",
+        queue="short",
         timeout=600
     )
     frappe.publish_realtime(
@@ -619,10 +619,10 @@ def call_all_pulls():
     results = {}
 
     for name, fn in {
-        "items": sync_items,
-        "item_prices": sync_item_prices,
-        "customers": sync_customers,
-        "price_lists": sync_price_lists,
+        "items": sync_items
+        # "item_prices": sync_item_prices,
+        # "customers": sync_customers,
+        # "price_lists": sync_price_lists,
     }.items():
         try:
             results[name] = fn()
