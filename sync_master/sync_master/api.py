@@ -42,7 +42,7 @@ def sync_items():
         cloud_url = settings.cloud_site_url
         api_key = settings.api_key
         api_secret = settings.api_secret
-        last_synced_at = settings.last_item_sync or "1970-01-01 00:00:00"
+        last_synced_at = settings.item_last_sync or "1970-01-01 00:00:00"
 
         debug(f"🔹 Fetching items modified after: {last_synced_at}")
         endpoint = f"{cloud_url}/api/resource/Item"
