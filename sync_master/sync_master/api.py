@@ -99,7 +99,7 @@ def sync_items():
             doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
             print(f"✅ Upserted item: {item_code}")
         last_modified = items[-1].get("modified") or last_synced_at
-        settings.db_set("last_item_sync", last_modified)
+        settings.db_set("item_last_sync", last_modified)
         debug(f"🔹 Updated last_item_sync to {last_modified}")
         debug(f"🎉 Synced {len(items)} items successfully")
         return f"Synced {len(items)} items"
