@@ -29,38 +29,21 @@ def force_sync(modules):
          results[module] = f"Failed: {str(e)}"
 
     return {"success": True, "details": results}
+import frappe
+import requests
 
+@frappe.whitelist()
 def sync_items():
     def debug(msg):
         print(msg)
         frappe.log_error(message=msg, title="Sync Debug")
 
     debug("🔹 Starting sync_items()")
-
     try:
         settings = frappe.get_single("Sync Settings")
-        cloud_url = settings.cloud_site_url
-        api_key = settings.api_key
-        api_secret = settings.api_secret
-        last_synced_at = settings.item_last_sync or "1970-01-01 00:00:00"
-
-        debug(f"🔹 Fetching items modified after: {last_synced_at}")
-        endpoint = f"{cloud_url}/api/resource/Item"
-        params = {
-            "filters": f'[["modified", ">", "{last_synced_at}"]]',
-            "fields": '["name","item_code","item_name","description","item_group","stock_uom","modified"]',
-            "order_by": "modified asc,name asc",
-            "limit_page_length": 500
-        }
-
-        response = requests.get(
-            endpoint,
-            params=params,
-            auth=HTTPBasicAuth(api_key, api_secret),
-            timeout=30
-        )
-
-        debug(f"🔹 HTTP GET to {endpoint} returned status {response.status_code}")
+        cloud_url = settings.cloud_site_url.rstrip("/")
+        endpoint = f"{cloud_url}/api/method/saas_api.www.api.get_products_saas"  # assuming this is the open endpoint
+        response = requests.get(endpoint, timeout=60)
 
         if response.status_code != 200:
             msg = f"❌ Failed to fetch items: {response.text}"
@@ -68,44 +51,77 @@ def sync_items():
             frappe.throw(msg)
 
         data = response.json()
-        items = data.get("data", [])
+        products = data.get("message", {}).get("products", [])
 
-        debug(f"🔹 Fetched {len(items)} items from cloud")
+        debug(f"🔹 Fetched {len(products)} products from cloud")
 
-        if not items:
-            debug("🔹 No new items to sync")
-            return "No new items to sync"
-        for item in items:
-            item_code = item.get("item_code") or item.get("name")
-            item_name = item.get("item_name") or item_code
-            item_group = item.get("item_group")
-            print(f"🔹 Processing item ----------------- {item}")
-            if not item_code:
-                msg = f"❌ Skipped item, missing identifier: {item}"
-                print(msg)
-                frappe.log_error(message=msg, title="Sync Skipped Item")
+        if not products:
+            debug("🔹 No products found")
+            return "No products found"
+
+        inserted = 0
+        skipped = 0
+
+        for p in products:
+            item_code = p.get("itemcode")
+            item_name = p.get("itemname") or item_code
+            group_name = p.get("groupname") or "All Item Groups"
+            stock_uom = p.get("uom", {}).get("stock_uom") or "Nos"
+
+            # Ensure group exists
+            if not frappe.db.exists("Item Group", group_name):
+                frappe.get_doc({
+                    "doctype": "Item Group",
+                    "item_group_name": group_name,
+                    "parent_item_group": "All Item Groups",
+                    "is_group": 0
+                }).insert(ignore_permissions=True)
+                debug(f"🛠 Created Item Group: {group_name}")
+
+            # Ensure UOM exists
+            if not frappe.db.exists("UOM", stock_uom):
+                frappe.get_doc({"doctype": "UOM", "uom_name": stock_uom}).insert(ignore_permissions=True)
+                debug(f"🛠 Created UOM: {stock_uom}")
+
+            if frappe.db.exists("Item", item_code):
+                skipped += 1
                 continue
-            ensure_item_group(item_group)
 
-            doc = frappe.get_doc({
+            # Insert item
+            item_doc = frappe.get_doc({
                 "doctype": "Item",
                 "item_code": item_code,
                 "item_name": item_name,
-                "description": item.get("description"),
-                "item_group": item_group,
-                "stock_uom": item.get("stock_uom"),
+                "item_group": group_name,
+                "stock_uom": stock_uom,
+                "is_stock_item": p.get("maintainstock", 1),
+                "is_sales_item": p.get("is_sales_item", 1),
+                "description": p.get("description", "")
             })
+            item_doc.insert(ignore_permissions=True)
+            inserted += 1
+            debug(f"✅ Inserted Item: {item_code}")
 
-            doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
-            print(f"✅ Upserted item: {item_code}")
-        last_modified = items[-1].get("modified") or last_synced_at
-        settings.db_set("item_last_sync", last_modified)
-        debug(f"🔹 Updated last_item_sync to {last_modified}")
-        debug(f"🎉 Synced {len(items)} items successfully")
-        return f"Synced {len(items)} items"
+            # Prices
+            for price in p.get("prices", []):
+                price_list = price.get("priceName") or "Standard Selling"
+                frappe.get_doc({
+                    "doctype": "Item Price",
+                    "item_code": item_code,
+                    "price_list": price_list,
+                    "price_list_rate": price.get("price"),
+                    "selling": 1 if price.get("type") == "selling" else 0,
+                    "buying": 1 if price.get("type") == "buying" else 0,
+                    "currency": "USD"
+                }).insert(ignore_permissions=True)
+
+        debug(f"🎉 Sync complete. Inserted {inserted}, skipped {skipped} existing items.")
+        return f"Inserted {inserted}, skipped {skipped} existing items."
+
     except Exception as e:
         debug(f"❌ Exception in sync_items: {str(e)}")
         raise
+        
 def ensure_item_group(item_group):
     if not item_group:
         return
@@ -467,10 +483,6 @@ def create_outbox_record(doc, method):
         }).insert(ignore_permissions=True)
         print(f"🔹 Created Outbox record for invoice: {doc.name}")
 
-import frappe
-from datetime import datetime
-import requests
-from requests.auth import HTTPBasicAuth
 
 
 @frappe.whitelist()
@@ -489,20 +501,14 @@ def push_pending_invoices():
     settings = frappe.get_single("Sync Settings")
 
     cloud_url = settings.cloud_site_url.rstrip("/")
-    api_key = settings.api_key
-    api_secret = settings.api_secret
     remote_company = settings.remote_company
-
     processed = 0
-
     pending = frappe.get_all(
         "Sales Invoice Outbox",
         filters={"status": "Pending"},
         fields=["name", "sales_invoice", "retry_count"]
     )
-
     print(f"🔹 Found {len(pending)} pending invoices")
-
     for row in pending:
         try:
             invoice = frappe.get_doc("Sales Invoice", row.sales_invoice)
@@ -511,9 +517,7 @@ def push_pending_invoices():
             if invoice.get("custom_synced"):
                 print(f"⏭ {invoice.name} already synced, skipping")
                 continue
-
             print(f"📦 Preparing {invoice.name}")
-
             # Build Sales Invoice payload
             si_doc = {
                 "doctype": "Sales Invoice",
@@ -543,12 +547,9 @@ def push_pending_invoices():
                     for d in invoice.items
                 ]
             }
-
             endpoint = f"{cloud_url}/api/method/saas_api.www.api.cloud_invoice"
-
             response = requests.post(
                 endpoint,
-                auth=HTTPBasicAuth(api_key, api_secret),
                 json=si_doc,
                 timeout=60
             )
@@ -588,17 +589,14 @@ def push_pending_invoices():
                 print(f"❌ Failed {invoice.name}")
 
             processed += 1
-
         except Exception as e:
             frappe.log_error(
                 title="Sales Invoice Sync Exception",
                 message=f"{row.sales_invoice}: {str(e)}"
             )
             print(f"🔥 Exception on {row.sales_invoice}: {e}")
-
     print(f"🎉 Finished. Processed {processed} invoices")
     return f"Processed {processed} invoices"
-
 
 @frappe.whitelist()
 def sync_from_remote():

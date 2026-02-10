@@ -242,11 +242,22 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+# hooks.py
+
 fixtures = [
     {
         "dt": "Client Script",
         "filters": [
             ["module", "=", "Sync Master"]
+        ]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Sales Invoice-custom_cloud_reference",
+                "Sales Invoice-custom_synced"
+            ]]
         ]
     }
 ]

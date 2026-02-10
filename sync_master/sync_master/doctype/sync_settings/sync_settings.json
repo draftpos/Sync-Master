@@ -9,12 +9,7 @@
   "cloud_site_url",
   "remote_company",
   "column_break_qfin",
-  "api_key",
   "site_name",
-  "api_secret_column",
-  "api_secret",
-  "section_break_youq",
-  "service_name_generated",
   "section_break_fcmv",
   "price_list_last_sync",
   "column_break_lnkc",
@@ -37,10 +32,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "api_secret_column",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "section_break_fcmv",
    "fieldtype": "Section Break",
    "label": "Timestamps"
@@ -55,23 +46,9 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "api_key",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "API Key",
-   "reqd": 1
-  },
-  {
-   "fieldname": "api_secret",
-   "fieldtype": "Data",
-   "label": "API Secret",
-   "reqd": 1
-  },
-  {
    "fieldname": "last_item_sync",
    "fieldtype": "Datetime",
-   "label": "Item Last Sync",
-   "read_only": 1
+   "label": "Item Last Sync"
   },
   {
    "fieldname": "column_break_gyao",
@@ -113,22 +90,13 @@
    "in_list_view": 1,
    "label": "Site Name",
    "reqd": 1
-  },
-  {
-   "fieldname": "service_name_generated",
-   "fieldtype": "Data",
-   "label": "Service Name Generated"
-  },
-  {
-   "fieldname": "section_break_youq",
-   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-04 10:28:47.228348",
+ "modified": "2026-02-10 16:19:57.343367",
  "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",
