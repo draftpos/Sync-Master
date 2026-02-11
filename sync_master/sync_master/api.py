@@ -29,9 +29,9 @@ def force_sync(modules):
          results[module] = f"Failed: {str(e)}"
 
     return {"success": True, "details": results}
+    
 import frappe
 import requests
-
 @frappe.whitelist()
 def sync_items():
     def debug(msg):
@@ -42,28 +42,48 @@ def sync_items():
     try:
         settings = frappe.get_single("Sync Settings")
         cloud_url = settings.cloud_site_url.rstrip("/")
-        endpoint = f"{cloud_url}/api/method/saas_api.www.api.get_products_saas"  # assuming this is the open endpoint
-        response = requests.get(endpoint, timeout=60)
+        endpoint_base = f"{cloud_url}/api/method/saas_api.www.api.get_products_saas"
 
-        if response.status_code != 200:
-            msg = f"❌ Failed to fetch items: {response.text}"
-            debug(msg)
-            frappe.throw(msg)
+        all_products = []
+        page = 1
+        limit = 1000
 
-        data = response.json()
-        products = data.get("message", {}).get("products", [])
+        # Fetch all pages
+        while True:
+            endpoint = f"{endpoint_base}?limit={limit}&page={page}"
+            response = requests.get(endpoint, timeout=120)
+            if response.status_code != 200:
+                msg = f"❌ Failed to fetch page {page}: {response.text}"
+                debug(msg)
+                frappe.throw(msg)
 
-        debug(f"🔹 Fetched {len(products)} products from cloud")
+            data = response.json().get("message", {})
+            products = data.get("products", [])
+            if not products:
+                break
 
-        if not products:
+            all_products.extend(products)
+            debug(f"🔹 Fetched {len(products)} products from page {page}, total so far: {len(all_products)}")
+
+            pagination = data.get("pagination", {})
+            if not pagination.get("has_next_page"):
+                break
+            page = pagination.get("next_page")
+
+        if not all_products:
             debug("🔹 No products found")
             return "No products found"
 
         inserted = 0
-        skipped = 0
+        updated = 0
+        batch_size = 100
 
-        for p in products:
-            item_code = p.get("itemcode")
+        for i, p in enumerate(all_products, start=1):
+            item_code = (p.get("itemcode") or "").strip()
+            if not item_code:
+                debug(f"❌ Skipping item with no code: {p}")
+                continue
+
             item_name = p.get("itemname") or item_code
             group_name = p.get("groupname") or "All Item Groups"
             stock_uom = p.get("uom", {}).get("stock_uom") or "Nos"
@@ -83,26 +103,32 @@ def sync_items():
                 frappe.get_doc({"doctype": "UOM", "uom_name": stock_uom}).insert(ignore_permissions=True)
                 debug(f"🛠 Created UOM: {stock_uom}")
 
+            # Upsert item
             if frappe.db.exists("Item", item_code):
-                skipped += 1
-                continue
-
-            # Insert item
-            item_doc = frappe.get_doc({
-                "doctype": "Item",
-                "item_code": item_code,
-                "item_name": item_name,
-                "item_group": group_name,
-                "stock_uom": stock_uom,
-                "is_stock_item": p.get("maintainstock", 1),
-                "is_sales_item": p.get("is_sales_item", 1),
-                "description": p.get("description", "")
-            })
-            item_doc.insert(ignore_permissions=True)
-            frappe.db.commit()
-            inserted += 1
-            debug(f"✅ Inserted Item: {item_code}")
-            
+                item_doc = frappe.get_doc("Item", item_code)
+                item_doc.item_name = item_name
+                item_doc.item_group = group_name
+                item_doc.stock_uom = stock_uom
+                item_doc.is_stock_item = p.get("maintainstock", 1)
+                item_doc.is_sales_item = p.get("is_sales_item", 1)
+                item_doc.description = p.get("description", "")
+                item_doc.save(ignore_permissions=True)
+                updated += 1
+                debug(f"✏️ Updated Item: {item_code}")
+            else:
+                item_doc = frappe.get_doc({
+                    "doctype": "Item",
+                    "item_code": item_code,
+                    "item_name": item_name,
+                    "item_group": group_name,
+                    "stock_uom": stock_uom,
+                    "is_stock_item": p.get("maintainstock", 1),
+                    "is_sales_item": p.get("is_sales_item", 1),
+                    "description": p.get("description", "")
+                })
+                item_doc.insert(ignore_permissions=True)
+                inserted += 1
+                debug(f"✅ Inserted Item: {item_code}")
 
             # Prices
             for price in p.get("prices", []):
@@ -117,12 +143,20 @@ def sync_items():
                     "currency": "USD"
                 }).insert(ignore_permissions=True)
 
-        debug(f"🎉 Sync complete. Inserted {inserted}, skipped {skipped} existing items.")
-        return f"Inserted {inserted}, skipped {skipped} existing items."
+            # Commit every batch
+            if i % batch_size == 0:
+                frappe.db.commit()
+                debug(f"💾 Committed batch of {batch_size} items")
+
+        # Final commit
+        frappe.db.commit()
+        debug(f"🎉 Sync complete. Inserted {inserted}, Updated {updated} items.")
+        return f"Inserted {inserted}, Updated {updated} items."
 
     except Exception as e:
         debug(f"❌ Exception in sync_items: {str(e)}")
         raise
+
 
 def ensure_item_group(item_group):
     if not item_group:
