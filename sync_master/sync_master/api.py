@@ -131,7 +131,7 @@ def sync_items():
                 debug(f"✅ Inserted Item: {item_code}")
 
             # Prices
-           for price in p.get("prices", []):
+            for price in p.get("prices", []):
                 price_list = price.get("priceName") or "Standard Selling"
                 existing_price = frappe.db.exists("Item Price", {
                     "item_code": item_code,
