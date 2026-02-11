@@ -99,8 +99,10 @@ def sync_items():
                 "description": p.get("description", "")
             })
             item_doc.insert(ignore_permissions=True)
+            frappe.db.commit()
             inserted += 1
             debug(f"✅ Inserted Item: {item_code}")
+            
 
             # Prices
             for price in p.get("prices", []):
