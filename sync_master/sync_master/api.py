@@ -29,9 +29,9 @@ def force_sync(modules):
          results[module] = f"Failed: {str(e)}"
 
     return {"success": True, "details": results}
-
 import frappe
 import requests
+
 @frappe.whitelist()
 def sync_items():
     def debug(msg):
@@ -39,6 +39,7 @@ def sync_items():
         frappe.log_error(message=msg, title="Sync Debug")
 
     debug("🔹 Starting sync_items()")
+
     try:
         settings = frappe.get_single("Sync Settings")
         cloud_url = settings.cloud_site_url.rstrip("/")
@@ -48,27 +49,29 @@ def sync_items():
         page = 1
         limit = 1000
 
-        # Fetch all pages
+        # Fetch all pages safely
         while True:
             endpoint = f"{endpoint_base}?limit={limit}&page={page}"
-            response = requests.get(endpoint, timeout=120)
-            if response.status_code != 200:
-                msg = f"❌ Failed to fetch page {page}: {response.text}"
-                debug(msg)
-                frappe.throw(msg)
+            try:
+                response = requests.get(endpoint, timeout=120)
+                response.raise_for_status()
+                data = response.json().get("message", {})
+            except Exception as e:
+                debug(f"❌ Failed to fetch page {page}: {str(e)}")
+                break  # stop fetching, don’t throw
 
-            data = response.json().get("message", {})
             products = data.get("products", [])
             if not products:
+                debug(f"🔹 No more products on page {page}")
                 break
 
             all_products.extend(products)
             debug(f"🔹 Fetched {len(products)} products from page {page}, total so far: {len(all_products)}")
 
             pagination = data.get("pagination", {})
-            if not pagination.get("has_next_page"):
+            if not pagination.get("has_next_page") or not pagination.get("next_page"):
                 break
-            page = pagination.get("next_page")
+            page += 1
 
         if not all_products:
             debug("🔹 No products found")
@@ -104,43 +107,60 @@ def sync_items():
                 debug(f"🛠 Created UOM: {stock_uom}")
 
             # Upsert item
+            # Upsert item directly with SQL
             if frappe.db.exists("Item", item_code):
-                item_doc = frappe.get_doc("Item", item_code)
-                item_doc.item_name = item_name
-                item_doc.item_group = group_name
-                item_doc.stock_uom = stock_uom
-                item_doc.is_stock_item = p.get("maintainstock", 1)
-                item_doc.is_sales_item = p.get("is_sales_item", 1)
-                item_doc.description = p.get("description", "")
-                item_doc.save(ignore_permissions=True)
+                frappe.db.sql("""
+                    UPDATE `tabItem`
+                    SET item_name=%s,
+                        item_group=%s,
+                        stock_uom=%s,
+                        is_stock_item=%s,
+                        is_sales_item=%s,
+                        description=%s
+                    WHERE item_code=%s
+                """, (
+                    item_name,
+                    group_name,
+                    stock_uom,
+                    p.get("maintainstock", 1),
+                    p.get("is_sales_item", 1),
+                    p.get("description", ""),
+                    item_code
+                ))
                 updated += 1
                 debug(f"✏️ Updated Item: {item_code}")
             else:
-                item_doc = frappe.get_doc({
-                    "doctype": "Item",
-                    "item_code": item_code,
-                    "item_name": item_name,
-                    "item_group": group_name,
-                    "stock_uom": stock_uom,
-                    "is_stock_item": p.get("maintainstock", 1),
-                    "is_sales_item": p.get("is_sales_item", 1),
-                    "description": p.get("description", "")
-                })
-                item_doc.insert(ignore_permissions=True)
+                frappe.db.sql("""
+                    INSERT INTO `tabItem`
+                    (item_code, item_name, item_group, stock_uom, is_stock_item, is_sales_item, description)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    item_code,
+                    item_name,
+                    group_name,
+                    stock_uom,
+                    p.get("maintainstock", 1),
+                    p.get("is_sales_item", 1),
+                    p.get("description", "")
+                ))
                 inserted += 1
                 debug(f"✅ Inserted Item: {item_code}")
 
             # Prices
             for price in p.get("prices", []):
                 price_list = price.get("priceName") or "Standard Selling"
+                uom = price.get("uom") or "Nos"
+                selling = 1 if price.get("type") == "selling" else 0
+                buying = 1 if price.get("type") == "buying" else 0
+
                 existing_price = frappe.db.exists("Item Price", {
                     "item_code": item_code,
                     "price_list": price_list,
-                    "uom": price.get("uom") or "Nos",
-                    "selling": 1 if price.get("type") == "selling" else 0,
-                    "buying": 1 if price.get("type") == "buying" else 0,
+                    "uom": uom,
+                    "selling": selling,
+                    "buying": buying
                 })
-                
+
                 if existing_price:
                     price_doc = frappe.get_doc("Item Price", existing_price)
                     price_doc.price_list_rate = price.get("price")
@@ -152,8 +172,8 @@ def sync_items():
                         "item_code": item_code,
                         "price_list": price_list,
                         "price_list_rate": price.get("price"),
-                        "selling": 1 if price.get("type") == "selling" else 0,
-                        "buying": 1 if price.get("type") == "buying" else 0,
+                        "selling": selling,
+                        "buying": buying,
                         "currency": "USD"
                     }).insert(ignore_permissions=True)
                     debug(f"✅ Inserted Price: {item_code} / {price_list}")
@@ -171,6 +191,7 @@ def sync_items():
     except Exception as e:
         debug(f"❌ Exception in sync_items: {str(e)}")
         raise
+
 
 
 def ensure_item_group(item_group):
@@ -536,6 +557,7 @@ def create_outbox_record(doc, method):
 
 
 
+
 @frappe.whitelist()
 def push_pending_invoices():
     """
@@ -649,6 +671,7 @@ def push_pending_invoices():
     print(f"🎉 Finished. Processed {processed} invoices")
     return f"Processed {processed} invoices"
 
+
 @frappe.whitelist()
 def sync_from_remote():
     """
@@ -665,6 +688,7 @@ def sync_from_remote():
         user="Administrator"
     )
     return "Cloud sync job enqueued successfully"
+
 
 def call_all_pulls():
     results = {}
