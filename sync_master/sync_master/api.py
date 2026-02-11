@@ -29,7 +29,7 @@ def force_sync(modules):
          results[module] = f"Failed: {str(e)}"
 
     return {"success": True, "details": results}
-    
+
 import frappe
 import requests
 @frappe.whitelist()
@@ -131,17 +131,32 @@ def sync_items():
                 debug(f"✅ Inserted Item: {item_code}")
 
             # Prices
-            for price in p.get("prices", []):
+           for price in p.get("prices", []):
                 price_list = price.get("priceName") or "Standard Selling"
-                frappe.get_doc({
-                    "doctype": "Item Price",
+                existing_price = frappe.db.exists("Item Price", {
                     "item_code": item_code,
                     "price_list": price_list,
-                    "price_list_rate": price.get("price"),
+                    "uom": price.get("uom") or "Nos",
                     "selling": 1 if price.get("type") == "selling" else 0,
                     "buying": 1 if price.get("type") == "buying" else 0,
-                    "currency": "USD"
-                }).insert(ignore_permissions=True)
+                })
+                
+                if existing_price:
+                    price_doc = frappe.get_doc("Item Price", existing_price)
+                    price_doc.price_list_rate = price.get("price")
+                    price_doc.save(ignore_permissions=True)
+                    debug(f"✏️ Updated Price: {item_code} / {price_list}")
+                else:
+                    frappe.get_doc({
+                        "doctype": "Item Price",
+                        "item_code": item_code,
+                        "price_list": price_list,
+                        "price_list_rate": price.get("price"),
+                        "selling": 1 if price.get("type") == "selling" else 0,
+                        "buying": 1 if price.get("type") == "buying" else 0,
+                        "currency": "USD"
+                    }).insert(ignore_permissions=True)
+                    debug(f"✅ Inserted Price: {item_code} / {price_list}")
 
             # Commit every batch
             if i % batch_size == 0:
