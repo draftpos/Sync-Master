@@ -108,41 +108,32 @@ def sync_items():
 
             # Upsert item
             # Upsert item directly with SQL
+           # Check if item exists
             if frappe.db.exists("Item", item_code):
-                frappe.db.sql("""
-                    UPDATE `tabItem`
-                    SET item_name=%s,
-                        item_group=%s,
-                        stock_uom=%s,
-                        is_stock_item=%s,
-                        is_sales_item=%s,
-                        description=%s
-                    WHERE item_code=%s
-                """, (
-                    item_name,
-                    group_name,
-                    stock_uom,
-                    p.get("maintainstock", 1),
-                    p.get("is_sales_item", 1),
-                    p.get("description", ""),
-                    item_code
-                ))
-                updated += 1
+                item = frappe.get_doc("Item", item_code)
+                item.item_name = item_name
+                item.item_group = group_name
+                item.stock_uom = stock_uom
+                item.is_stock_item = p.get("maintainstock", 1)
+                item.is_sales_item = p.get("is_sales_item", 1)
+                item.is_purchase_item = 1
+                item.description = p.get("description", "")
+                item.save(ignore_permissions=True)
                 debug(f"✏️ Updated Item: {item_code}")
             else:
-                frappe.db.sql("""
-                    INSERT INTO `tabItem`
-                    (item_code, item_name, item_group, stock_uom, is_stock_item, is_sales_item, description)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                """, (
-                    item_code,
-                    item_name,
-                    group_name,
-                    stock_uom,
-                    p.get("maintainstock", 1),
-                    p.get("is_sales_item", 1),
-                    p.get("description", "")
-                ))
+                item = frappe.get_doc({
+                    "doctype": "Item",
+                    "item_code": item_code,
+                    "item_name": item_name,
+                    "item_group": group_name,
+                    "stock_uom": stock_uom,
+                    "is_stock_item": p.get("maintainstock", 1),
+                    "is_sales_item": p.get("is_sales_item", 1),
+                    "is_purchase_item": 1,
+                    "description": p.get("description", "")
+                })
+                item.insert(ignore_permissions=True)
+                debug(f"✅ Inserted Item: {item_code}")
                 inserted += 1
                 debug(f"✅ Inserted Item: {item_code}")
 
