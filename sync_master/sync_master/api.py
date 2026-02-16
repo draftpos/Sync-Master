@@ -183,8 +183,6 @@ def sync_items():
         debug(f"❌ Exception in sync_items: {str(e)}")
         raise
 
-
-
 def ensure_item_group(item_group):
     if not item_group:
         return
@@ -576,6 +574,7 @@ def push_pending_invoices():
     for row in pending:
         try:
             invoice = frappe.get_doc("Sales Invoice", row.sales_invoice)
+            print(f"--------------real invoice-------{row.sales_invoice}")
 
             # 🔒 Skip already-synced invoices
             if invoice.get("custom_synced"):
@@ -618,6 +617,7 @@ def push_pending_invoices():
                 timeout=60
             )
             resp_json = response.json()
+            print(resp_json)
             remote_si = resp_json.get("message", {}).get("data", {}).get("name")
             print(f"remote reference received--------------{remote_si}")
 
