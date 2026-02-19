@@ -6,27 +6,15 @@
  "engine": "InnoDB",
  "field_order": [
   "remote_site_details_section",
-  "cloud_site_url",
+  "cloud_uri",
   "remote_company",
   "column_break_qfin",
-  "site_name",
+  "cloud_site",
+  "local_site_name",
   "section_break_fcmv",
-  "price_list_last_sync",
-  "column_break_lnkc",
-  "last_item_sync",
-  "column_break_gyao",
-  "customer_last_sync",
-  "column_break_iejf",
-  "price_last_sync"
+  "quotation_last_pulled"
  ],
  "fields": [
-  {
-   "fieldname": "cloud_site_url",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Cloud Site URL",
-   "reqd": 1
-  },
   {
    "fieldname": "column_break_qfin",
    "fieldtype": "Column Break"
@@ -42,41 +30,6 @@
    "label": "Remote SIte Details"
   },
   {
-   "fieldname": "column_break_lnkc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "last_item_sync",
-   "fieldtype": "Datetime",
-   "label": "Item Last Sync"
-  },
-  {
-   "fieldname": "column_break_gyao",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "customer_last_sync",
-   "fieldtype": "Datetime",
-   "label": "Customer Last Sync",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_iejf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "price_last_sync",
-   "fieldtype": "Datetime",
-   "label": "Price Last Sync ",
-   "read_only": 1
-  },
-  {
-   "fieldname": "price_list_last_sync",
-   "fieldtype": "Datetime",
-   "label": "Price List Last Sync ",
-   "read_only": 1
-  },
-  {
    "fieldname": "remote_company",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -85,10 +38,31 @@
    "reqd": 1
   },
   {
-   "fieldname": "site_name",
+   "fieldname": "quotation_last_pulled",
+   "fieldtype": "Datetime",
+   "label": "Quotation Last Pulled"
+  },
+  {
+   "description": "labmaster.local",
+   "fieldname": "local_site_name",
+   "fieldtype": "Data",
+   "label": "Local SIte Name",
+   "reqd": 1
+  },
+  {
+   "description": "pay.havano.cloud",
+   "fieldname": "cloud_site",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Site Name",
+   "label": "Cloud Site Name",
+   "reqd": 1
+  },
+  {
+   "description": "ws://pay.havano.cloud:8765\n",
+   "fieldname": "cloud_uri",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cloud Site URL",
    "reqd": 1
   }
  ],
@@ -96,7 +70,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-10 16:19:57.343367",
+ "modified": "2026-02-19 16:22:39.292085",
  "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",
