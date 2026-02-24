@@ -6,7 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "remote_site_details_section",
-  "cloud_uri",
+  "cloud_site_url",
   "remote_company",
   "column_break_qfin",
   "cloud_site",
@@ -59,7 +59,7 @@
   },
   {
    "description": "ws://pay.havano.cloud:8765\n",
-   "fieldname": "cloud_uri",
+   "fieldname": "cloud_site_url",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Cloud Site URL",
@@ -70,7 +70,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-02-19 16:22:39.292085",
+ "modified": "2026-02-24 19:56:49.192722",
  "modified_by": "Administrator",
  "module": "Sync Master",
  "name": "Sync Settings",

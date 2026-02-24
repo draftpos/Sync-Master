@@ -23,12 +23,14 @@ def get_sync_config():
         settings = frappe.get_doc("Sync Settings", "Sync Settings")
         cloud_site = settings.cloud_site    
         local_site = settings.local_site_name 
-        cloud_domain = settings.cloud_uri 
-        
+        cloud_domain = settings.cloud_site_url 
+    
+    
+
         return {
             "cloud_site": cloud_site,
             "local_site": local_site,
-            "cloud_uri": cloud_domain
+            "cloud_site_url": cloud_domain
         }
     finally:
         frappe.destroy()
@@ -41,7 +43,7 @@ def get_sync_config():
 config = get_sync_config()
 CLOUD_SITE = config["cloud_site"]
 LOCAL_SITE = config["local_site"]
-CLOUD_WS_URI = config["cloud_uri"]
+CLOUD_WS_URI = config["cloud_site_url"]
 
 print(f"Config - Cloud Site: {CLOUD_SITE}, Local Site: {LOCAL_SITE}, Cloud WS URI: {CLOUD_WS_URI}")
 
