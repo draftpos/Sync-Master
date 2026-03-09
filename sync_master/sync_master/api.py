@@ -544,22 +544,9 @@ def create_outbox_record(doc, method):
         }).insert(ignore_permissions=True)
         print(f"🔹 Created Outbox record for invoice: {doc.name}")
 
-
-
-
 @frappe.whitelist()
 def push_pending_invoices():
-    """
-    Push pending Sales Invoices to remote Frappe site.
-    On success:
-      - Marks local Sales Invoice as synced
-      - Stores remote Sales Invoice number in custom_reference
-      - Marks outbox as Synced
-    Safe for cron.
-    """
-
     print("🚀 Starting push_pending_invoices")
-
     settings = frappe.get_single("Sync Settings")
 
     cloud_url = settings.cloud_site_url.rstrip("/")
@@ -568,7 +555,8 @@ def push_pending_invoices():
     pending = frappe.get_all(
         "Sales Invoice Outbox",
         filters={"status": "Pending"},
-        fields=["name", "sales_invoice", "retry_count"]
+        fields=["name", "sales_invoice", "retry_count"],
+        limit=50
     )
     print(f"🔹 Found {len(pending)} pending invoices")
     for row in pending:
@@ -617,40 +605,30 @@ def push_pending_invoices():
                 timeout=60
             )
             resp_json = response.json()
-            print(resp_json)
-            remote_si = resp_json.get("message", {}).get("data", {}).get("name")
-            print(f"remote reference received--------------{remote_si}")
-
             outbox = frappe.get_doc("Sales Invoice Outbox", row.name)
             outbox.last_attempt = datetime.now()
             outbox.retry_count += 1
-
-            # ✅ SUCCESS
-            if response.status_code in (200, 201):
-                resp_json = response.json()
-                remote_si = resp_json.get("message", {}).get("data", {}).get("name")
-
+            status = resp_json.get("message", {}).get("status")  # check the JSON status
+            if status == "success":
+                remote_si = resp_json.get("message", {}).get("data", {}).get("invoice")
                 # Update local Sales Invoice (NO save)
                 invoice.db_set("custom_synced", 1)
                 invoice.db_set("custom_cloud_reference", remote_si)
-
                 outbox.status = "Synced"
                 outbox.save(ignore_permissions=True)
-
                 print(f"✅ {invoice.name} → {remote_si}")
 
-            # ❌ FAILURE
             else:
                 outbox.status = "Failed"
-                outbox.error_message = f"{response.status_code} - {response.text}"
+                outbox.error_message = resp_json.get("message", {}).get("message") or str(resp_json)
                 outbox.save(ignore_permissions=True)
-
+                
                 frappe.log_error(
                     title="Sales Invoice Sync Failed",
-                    message=f"{invoice.name}: {response.status_code} - {response.text}"
+                    message=f"{invoice.name} - {outbox.error_message}"
                 )
-
-                print(f"❌ Failed {invoice.name}")
+                
+                print(f"❌ Failed {invoice.name} - {outbox.error_message}")
 
             processed += 1
         except Exception as e:
